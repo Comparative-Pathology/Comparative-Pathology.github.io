@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+<meta charset="utf-8"/>
+<title>GCA-ModelViewer2D - Edinburgh 2D atlas based on the EMBL-EBI Expression
+Atlas gut anatomogram and developed as part of the Helmsley Gut Cell Atlas initiative.</title>
+</head>
+
+
+<style type="text/css" media="screen">
+body, html {
+  color: #fff;
+  background-color: #000;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+}
+#head {
+  position: fixed;
+  text-align: center;
+  top: 0%;
+  height: 5%;
+  left: 0%;
+  width: 100%;}
+#control {
+  z-index: 300;
+  position: fixed;
+  top: 5%;
+  height: 95%;
+  left: 0%;
+  width: 25%;}
+#modelWrapper {
+  color: #fff;
+  background-color: #000;
+  position: fixed;
+  top: 5%;
+  height: 95%;
+  left:  30%;
+  width: 70%;
+  margin: 0;
+  padding: 0;}
+#dialogtext {
+  z-index: 500;
+  border-style: solid;
+  position: absolute;
+  bottom: 50px;
+  left: 150px;
+  width: 400px;
+  color: #fff;
+  background: #000;
+  height: 300px;
+  opacity: 1;
+  text-align: center;
+  display: none;
+  overflow: auto;}
+</style>
+
+<body>
+
+<div id="head">
+GCA-ModelViewer2D - Edinburgh 2D atlas based on the EMBL-EBI Expression
+Atlas gut anatomogram and developed as part of the Helmsley Gut Cell Atlas initiative.
+</div>
+
+<div id="dialogtext"> </div>
+
+<div id="control">
+<table>
+<tr>
+  <td>Landmark Select</td>
+  <td>
+  <table id="landmarkselecttable">
+    <!-- landmark bounded interval selection created by setLandmarkDisplay() -->
+  </table>
+</tr>
+<tr>
+  <td>Path Position</td>
+  <td><input type="range" id="positionrng" min="0.000" max="1.000" step="0.001"
+             value="0.500" oninput="window.gui.setPathPosition()"></td>
+  <td><label id="positionlab">0.500</label></td>
+</tr>
+<tr>
+<td>Anatomy Opacity</td>
+  <td><input type="range"
+	     id="anaoprng" min="0" max="1.00" step="0.01"
+	     value="0.30" oninput="window.gui.setAnaOp()"></td>
+  <td><label id="anaoplab">0.30</label></td>
+</tr>
+<tr>
+  <td>ROI Width</td>
+  <td><input type="range" id="roiwidthrng" min="0.001" max="1.00" step="0.01"
+             value="0.01" oninput="window.gui.setPathROIRange()"></td>
+  <td><label id="roiwidthlab">0.10</label></td>
+</tr>
+<tr>
+  <td><input type="button"
+	     id="midlnbut"
+	     value="Show Midlines"
+	     onclick="window.gui.showMidlines()"></td>
+</tr>
+<tr>
+  <td><input type="button"
+	     id="midlnbut"
+	     value="Delete All Markers"
+	     onclick="window.gui.deleteMarkers()"></td>
+</tr>
+<tr>
+  <td><input type="button"
+	     id="showmrkbut"
+	     value="Show Marker Positions"
+	     onclick="window.gui.showMarkers()"></td>
+</tr>
+<tr>
+  <td><input type="button"
+             id="showsamitv"
+             value="Show Sample Intervals"
+             onclick="window.gui.showMappedSamItvs()"></td>
+</tr>
+<tr>
+  <td>Sample</td>
+  <td><label id="samplelab"> </label></td>
+</tr>
+<tr>
+  <td><input type="button"
+             id="searchsam"
+             value="Open Sample Page",
+             onclick="window.gui.searchMappedSam()"></td>
+</tr>
+<tr>
+  <td>Position</td>
+  <td><label id="positioncoordslab">0.0000,0.0000</label></td>
+</tr>
+<tr>
+  <td>Path Index</td>
+  <td><label id="positionindexlab">0,0</label></td>
+</tr>
+</table>
+</div>
+
+<div id="modelWrapper">
+</div>
+
+<!-- Can't import module for fabric.js so need to source it here. -->
+<script src='js/fabric.js'></script>
+
+<script type="module">
+import {GCA2DRenderer} from './js/GCA2DRenderer.js';
+
+var prm = undefined;
+var config = undefined;
+var gcaRen = undefined;
+
+var roiWidth = 0.10;
+var marker_idx = 0;
+var position = 0.5;
+var landmarkIndex = 0;
+var first_update = true;
+var samItvVisible = false;
+var samSelected = undefined;
+
+/* This defining the samples like this is a HACK */
+var samples = [
+	      // From VHM large intestine
+	      'HBM294.KLBX.557', 'HBM498.KBVQ.446', 'HBM777.LKTF.999', 
+	      'HBM354.VCFV.796', 'HBM544.CZWL.784', 'HBM799.RXWZ.543', 
+	      'HBM463.FBXN.343', 'HBM595.QBKS.265', 'HBM895.KJBW.679', 
+	      'HBM464.RHLH.686', 'HBM633.PRRH.456', 'HBM896.ZPRW.239', 
+	      'HBM495.RJQQ.292', 'HBM764.FQJK.692', 'HBM936.THPV.749',
+	      // From VHF large intestine
+	      'HBM536.BHKD.628', 'HBM586.JRXG.769',
+	      // From VHF small intestine
+	      'HBM229.NKWB.488', 'HBM774.WDWS.247'
+	    ];
+/* The landmarks and paths are derived from the config file landmarks and simply
+ * contain an array with a subset of the landmark information or array of
+ * path identifiers.
+ *  [{position: <pos>, path: [0|1], abbreviated_name: <name>, id: <id>}, ...]
+ *  [<colon path id>, ...]
+ * See setLandmarkDisplay().
+ */
+var landmarks = [];
+var paths = [];
+
+/* Object with functions called by the GUI. */
+window.gui = {};
+
+window.gui.selectLandmarks = function(idx) {
+  landmarkIndex = parseInt(idx);
+  updateRenderer();
+}
+
+window.gui.setPathPosition = function() {
+  let rpr = document.getElementById('positionrng');
+  let rpl = document.getElementById('positionlab');
+  position = parseFloat(rpr.value);
+  rpl.innerHTML = position;
+  updateRenderer();
+}
+
+window.gui.setPathROIRange = function() {
+  let rwr = document.getElementById('roiwidthrng');
+  let rwl = document.getElementById('roiwidthlab');
+  roiWidth = parseFloat(rwr.value);
+  rwl.innerHTML = roiWidth;
+  updateRenderer();
+}
+
+window.gui.deleteMarkers = function() {
+  while(marker_idx > 0) {
+    gcaRen.removeMarker(--marker_idx);
+  }
+  marker_idx = 0;
+}
+
+window.gui.setAnaOp = function() {
+  let aor = document.getElementById('anaoprng');
+  let aol = document.getElementById('anaoplab');
+  let op = parseFloat(aor.value);
+  aol.innerHTML = op;
+  gcaRen.setProperties('ANATOMY_IMAGES', 'GUT_ATLAS_MOB:21', {opacity: op});
+  gcaRen.setProperties('ANATOMY_IMAGES', 'GUT_ATLAS_MOB:24', {opacity: op});
+}
+
+window.gui.showMidlines = function() {
+  let v = !(gcaRen.getProperty('PATHS', paths[0], 'visible'));
+  let but = document.getElementById('midlnbut');
+  but.value = (v)? 'Hide Midlines': 'Show Midlines';
+  gcaRen.setProperties('PATHS', paths[0], {visible: v});
+  gcaRen.setProperties('PATHS', paths[1], {visible: v});
+}
+
+window.gui.showMarkers = function() {
+  let text = document.getElementById('dialogtext');
+  let but = document.getElementById('showmrkbut');
+  let style = window.getComputedStyle(text);
+  if(style.display === 'none') {
+    text.style.display = 'block';
+    but.value = 'Hide Marker Positions';
+    let txt = '<H1>Marker Positions</H1>' +
+	'<table><tr>' +
+	'<td>Name</td><td>Type</td><td>x</td><td>y</td><td>Index</td></tr>';
+    let lmks = gcaRen.findAllDispObj('LANDMARKS', undefined);
+    let mrks = gcaRen.findAllDispObj('MARKERS', undefined);
+    let objs = lmks.concat(mrks);
+    if(defined(objs)) {
+      for(let k in objs) {
+	let o = objs[k];
+	let p = o[1].gca_type;
+	if((typeof(p) !== 'undefined') && (p === 'MARKER')) {
+	  let s = o[1].gca_id;
+	  let t;
+	  if(o[1].gca_group === 'LANDMARKS') {
+	    let l = gcaRen.landmarkFromID(s);
+	    s = l.anatomy[0].abbreviated_name;
+	    t = 'L';
+	  } else {
+	    t = 'M';
+	  }
+	  let p = o[1].gca_position;
+	  let idx = gcaRen.positionToPath(p, 1.0);
+	  let idx_txt = defined(idx)? '' + idx[1]: 'undefined';
+	  txt += '<tr><td>' + s + '</td><td>' +
+			      t + '</td><td>' +
+			      p.x + '</td><td>' +
+			      p.y + '</td><td>' +
+			      idx_txt + '</td></tr>';
+	}
+      }
+    }
+    text.innerHTML = txt;
+  } else {
+    but.value = 'Show Marker Positions';
+    text.style.display = 'none';
+  }
+}
+
+window.gui.showMappedSamItvs = function() {
+  samItvVisible = !samItvVisible;
+  let but = document.getElementById('showsamitv');
+  but.value = (samItvVisible)?
+      'Hide Sample Intervals': 'Show Sample Intervals';
+  let objs = gcaRen.findAllDispObj('TRACKS', undefined);
+  if(objs.length > 0) {
+    for(let i = 0; i < objs.length; ++i) {
+      let trk = objs[i];
+      gcaRen.setObjProperty(trk[1], {opacity: 1.0, visible: samItvVisible});
+    }
+  }
+}
+
+window.gui.searchMappedSam = function() {
+  if(samSelected !== undefined) {
+    let url = 'https://portal.hubmapconsortium.org/search?q=' + samSelected +
+        '&entity_type[0]=Sample';
+    window.open(url, '_blank');
+  }
+}
+
+function updateRenderer() {
+  let lmk0 = landmarks[landmarkIndex];
+  let lmk1 = landmarks[landmarkIndex + 1];
+  let w2 = roiWidth / 2.0;
+  gcaRen.setPosition(lmk0.id, lmk1.id, position,
+                     lmk0.id, lmk1.id, position - w2,
+		     lmk0.id, lmk1.id, position + w2);
+  if(first_update) {
+    first_update = false;
+    gcaRen.setProperties('PATHS', paths[0], {visible: false});
+    gcaRen.setProperties('PATHS', paths[1], {visible: false});
+  }
+  if(lmk0.path === 0) {
+    gcaRen.setProperties('ANATOMY_IMAGES', 'GUT_ATLAS_MOB:21',
+        {visible: true});
+    gcaRen.setProperties('ANATOMY_IMAGES', 'GUT_ATLAS_MOB:24',
+        {visible: false});
+  } else {
+    gcaRen.setProperties('ANATOMY_IMAGES', 'GUT_ATLAS_MOB:21',
+        {visible: false});
+    gcaRen.setProperties('ANATOMY_IMAGES', 'GUT_ATLAS_MOB:24',
+        {visible: true});
+  }
+}
+
+function defined(x) {
+  return(typeof x !== 'undefined');
+}
+
+function unselectAllSamples() {
+  let li = document.getElementById('samplelab');
+  li.innerHTML = '';
+  samSelected = undefined;
+  if(samples !== undefined) {
+    for(let i = 0; i < samples.length; ++i) {
+      let trk = gcaRen.findDispObj('TRACKS', samples[i]);
+      if(defined(trk)) {
+        gcaRen.setObjProperty(trk[1], {bloom: false});
+      }
+    }
+  }
+}
+
+function picker(ren, pos) {
+  const tol = 3.0;
+  let trk = undefined;
+  let mrk = gcaRen.getClosestObj('MARKERS', pos, tol);
+  if(typeof mrk === 'undefined') {
+    trk = gcaRen.getClosestObj('TRACKS', pos, tol);
+  }
+  if(typeof mrk !== 'undefined') {
+    gcaRen.removeMarker(mrk.gca_id);
+  } else if (typeof trk !== 'undefined') {
+    unselectAllSamples();
+    let li = document.getElementById('samplelab');
+    gcaRen.setObjProperty(trk, {bloom: true});
+    samSelected = trk.gca_id;
+    li.innerHTML = samSelected;
+  } else {
+    gcaRen.addMarker(marker_idx, pos, marker_idx, {color: '0x000000'});
+    ++marker_idx;
+  }
+  let lp = document.getElementById('positioncoordslab');
+  lp.innerHTML = pos.x.toFixed(2) + ',' + pos.y.toFixed(2);
+  let li = document.getElementById('positionindexlab');
+  let pp = gcaRen.positionToPath(pos, tol * tol);
+  if(defined(pp)) {
+    li.innerHTML = pp[0] + ',' + pp[1];
+  } else {
+    li.innerHTML = 'dist > ' + tol;
+  }
+}
+
+  /*!
+ * \fn parseURL
+ * Parses the query string of the URL for paramters
+ * (see https://en.wikipedia.org/wiki/Query_string).
+ * On return the global parameter map prm is set with key/value pairs.
+ */
+function parseURL() {
+  prm = {};
+  let href = new String(location.href);
+  let seg = href.split('?');
+  let base_url = seg[0];
+  if(seg.length === 2) {
+    seg = seg[1].split('&');
+    let len = seg.length;
+    for(let i = 0; i < len; ++i) {
+      let s = seg[i].split('=');
+      prm[s[0]] = s[1];
+    }
+  }
+}
+
+/* These samples are added as a demo. In a real application these would
+ * presumably be read from some service. */
+function addSamples() {
+  if(!samples) {
+    ['showsamitv', 'samplelab', 'searchsam'].forEach(function(id) {
+      let e = document.getElementById(id);
+      e.disabled = true;
+    });
+  } else {
+    let blocks = []; // Used to separate intervals per landmark
+    for(let i = 0; i < samples.length; ++i) {
+      let sam = samples[i]
+      let f = 'samples/' + samples[i] + '.jsn';
+      let req = new XMLHttpRequest();
+      req.open('GET', f, false);
+      req.overrideMimeType("text/html");
+      req.send(null);
+      if(req.status === 200) {
+        let si = JSON.parse(req.responseText);
+	let sii = si.intervals[0];
+	let itv = gcaRen.mapIntervalToMidline(
+	    sii[0].landmarks[0], sii[0].landmarks[1], sii[0].position,
+	    sii[1].landmarks[0], sii[1].landmarks[1], sii[1].position);
+	/* TODO This method of separating the intervals is only suitable
+	   for small numbers! */
+	if(typeof blocks[sii[0].landmarks[0]] === 'undefined') {
+	  blocks[sii[0].landmarks[0]] = 0;
+	} else {
+	  blocks[sii[0].landmarks[0]] = blocks[sii[0].landmarks[0]] + 1;
+	}
+	let j = blocks[sii[0].landmarks[0]];
+        let a = (Math.floor(j % 2) === 0)? 1: -1;
+	let r = (Math.floor(j / 2) + 1.0) * 7.0;
+        let t = gcaRen.addTrack(sam, itv[0], itv[1], itv[2], '0x00ffff', r, a);
+	console.log('a = ' + a + ', r = ' + r);
+	gcaRen.setObjProperty(t, {visible: samItvVisible, opacity: 1.0})
+      } else {
+        alert('Failed to load JSON file ' + f + '.');
+
+      }
+    }
+  }
+}
+
+/* Creates a sorted array of landmarks and the associated table of
+ * landmark bounded interval radio buttons. */
+function setLandmarkDisplay() {
+  landmarks = [];
+  // Find colon path, it's the one with an "anus" landmark
+  let colon_path = undefined;
+  for(let i = 0; i < config.landmarks.length; ++i) {
+    let lmk = config.landmarks[i];
+    if(lmk.anatomy[0].abbreviated_name === 'anus') {
+      colon_path = lmk.paths[0];
+      break;
+    }
+  }
+  paths.push(colon_path);
+  // Build table of landmarks for display
+  for(let i = 0; i < config.landmarks.length; ++i) {
+    let lmk = config.landmarks[i];
+    let pth = undefined;
+    if(lmk.paths[0] === colon_path) {
+      pth = 0;
+    } else {
+      pth = 1;
+      if(paths.length === 1) {
+        paths.push(lmk.paths[0]);
+      }
+    }
+    landmarks.push({position: lmk.position[0],
+                    path: pth,
+                    abbreviated_name: lmk.anatomy[0].abbreviated_name,
+                    id: lmk.id});
+  }
+  landmarks.sort(function(a, b){
+    return((a.path - b.path) * 1000000 + (a.position - b.position))});
+  let tab = document.getElementById('landmarkselecttable');
+  let ti = 0;
+  for(let i = 0; i < landmarks.length - 1; ++i) {
+    let lmk0 = landmarks[i];
+    let lmk1 = landmarks[i + 1];
+    if(lmk0.path === lmk1.path) {
+      let row = tab.insertRow(ti);
+      let c0 = row.insertCell(0);
+      c0.innerHTML = lmk0.abbreviated_name + '-' + lmk1.abbreviated_name;
+      let c1 = row.insertCell(1);
+      let e = document.createElement('input');
+      e.setAttribute('type', 'radio');
+      e.setAttribute('name', 'landmarkselect');
+      e.checked = (ti === 0);
+      e.onclick=function(){window.gui.selectLandmarks(i)};
+      c1.appendChild(e);
+      ++ti;
+    }
+  }
+}
+
+
+// Parse the given config file name to get the model directory, eg:
+// EdinGCA_2D_00030 from config file EdinGCA_2D_00030_1_0.json */
+function modelDir(cfg) {
+  let md = undefined;
+  let s0 = cfg.split('.');
+  let s1 = s0[0].split('_');
+  md = s1[0] + '_' + s1[1] + '_' + s1[2] + '/';
+  return(md);
+}
+
+// Create the renderer, populate it and set it running
+function main() {
+  setLandmarkDisplay();
+  gcaRen = new GCA2DRenderer(window, document.getElementById('modelWrapper'),
+                             updateRenderer, picker);
+  gcaRen.init(config);
+  gcaRen.loadModels();
+  addSamples();
+}
+
+parseURL()
+if(prm['config'] === undefined) {
+  alert('No parameters provided, a configuration file is required.');
+} else {
+  let config_file = prm['config'];
+  let req = new XMLHttpRequest();
+  req.open('GET', config_file, false);
+  req.send(null);
+  if(req.status === 200) {
+    /* Check valid JSON only to test, parsed again in GCA2DRenderer(). */
+    config = JSON.parse(req.responseText);
+    if(Boolean(config)) {
+      config['model_dir'] = 'models/' + modelDir(config_file);
+      main();
+    } else {
+      alert('Invalid configuration file provided.');
+    }
+  } else {
+    alert('Unable to read configuration file.');
+  }
+}
+
+</script>
+
+</body>
+</html>

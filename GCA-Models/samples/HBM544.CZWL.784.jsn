@@ -1,0 +1,19 @@
+{
+"description": "GCA Mapped Spatial Data",
+"creation_date": "27-09-2022 12:07:07",
+"provenance": "HuBMAP",
+"external_sample_id": "HBM544.CZWL.784",
+"external_placement": {"@context": "https://hubmapconsortium.github.io/hubmap-ontology/ccf-context.jsonld", "@id": "http://purl.org/ccf/1.5/3baf4809-eff0-4a0e-8ccb-0d7e6d83f371_placement", "@type": "SpatialPlacement", "placement_date": "2021-10-19", "rotation_order": "XYZ", "rotation_units": "degree", "scaling_units": "ratio", "target": "http://purl.org/ccf/latest/ccf.owl#VHMColon", "translation_units": "millimeter", "x_rotation": 90, "x_scaling": 1, "x_translation": 128.226, "y_rotation": 26, "y_scaling": 1, "y_translation": 354.62, "z_rotation": 88, "z_scaling": 1, "z_translation": 187.504},
+"gca_sample_id": "HBM544.CZWL.784",
+"gca_model_id": "GUT_ATLAS_MOD:70",
+"transform": [[-0.028597686636496884, 0.050363706235073316, 1.03690818229916, 9.723957716000001], [0.3885961816626609, -0.8872751766551413, 0.0974333415715994, -109.98205225859998], [0.8983009082950566, 0.44030989186064057, -0.057099972706312035, 316.87003752084], [0.0, 0.0, 0.0, 1.0]],
+"intervals": [
+  [{
+    "landmarks": ["GUT_ATLAS_ANA:1005", "GUT_ATLAS_ANA:1004"],
+    "position":0.47107438016528924
+  }, {
+    "landmarks": ["GUT_ATLAS_ANA:1005", "GUT_ATLAS_ANA:1004"],
+    "position":0.5234159779614325
+  }]
+  ]
+}
